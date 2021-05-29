@@ -1,4 +1,4 @@
-mport requests
+import requests
 import json
 
 API_KEY= '93174196079fc424e2d5676fea92b601c7a9e68d76feddb88d9bf4c509a065cd'
