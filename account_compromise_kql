@@ -1,0 +1,192 @@
+account compromise
+
+-ip trusted// normal location// previously observed      ---- yes
+-user agent familiar //if seen earlier with successfull login---yes
+ -No of mfa failures//----No
+-from this ip if success found--- No
+-from the same ip same user user agent different users how many events---No 
+
+- new inbox rule----yes
+-dowload upload'---yes
+- external mails send---yes
+-secuirty alert triggered for the user---NO
+-user account created deleted by the user---No
+
+
+
+
+
+let x= datatable (user_agent: string )
+
+["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36 Edg/90.0.818.62"];
+
+
+
+let y = datatable (location: string )
+
+["NG"];
+
+
+
+let z= datatable (upn: string)
+
+["zac.hansen@ferguson.com"];
+
+
+
+let j= datatable (IPAddress : string)
+
+["129.56.35.211"];
+
+
+
+let ipadd= "^198.90";
+
+let ipadd2=(SigninLogs
+
+| where IPAddress matches regex ipadd
+
+| project IPAddress);
+
+
+
+union isfuzzy=true (SigninLogs
+
+| where UserPrincipalName in (z)
+
+| where TimeGenerated <= ago(12h)
+
+| where TimeGenerated >= ago(14d)
+
+| where ResultType == 0
+
+| where UserAgent in (x)
+
+| distinct UserAgent in (x)
+
+| extend Previously_observed_UserAgent = Column1
+
+| project Previously_observed_UserAgent
+
+),
+
+(SigninLogs
+
+| where UserPrincipalName in (z)
+
+| where TimeGenerated <= ago(12h)
+
+| where TimeGenerated >= ago(14d)
+
+| where ResultType == 0
+
+| where Location in (y)
+
+| distinct Location in (y)
+
+| extend Previously_Observed_Location = Column2
+
+| project Previously_Observed_Location
+
+),
+
+(
+
+SigninLogs
+
+| where IPAddress !in (ipadd2) and IPAddress in (j)
+
+| where TimeGenerated <= ago(12h)
+
+| where TimeGenerated >= ago(14d)
+
+| where ResultType == 0
+
+| where UserPrincipalName  in (z)
+
+| distinct UserPrincipalName in (z)
+
+| extend Previously_Observed_IP = Column3
+
+| project Previously_Observed_IP
+
+),
+
+
+    
+
+(
+
+OfficeActivity
+
+| where Operation contains "Set-Mailbox" or Operation contains "New-InboxRule"
+
+| where TimeGenerated <= ago(12h)
+
+| where TimeGenerated >= ago(14d)
+
+| where UserId in (z)
+
+| distinct UserId in (z)
+
+| extend New_Rule_Written = Column4
+
+| project New_Rule_Written
+
+),
+
+(
+OfficeActivity
+| where UserId in ( z)
+| where Operation contains "FileDownloaded" or Operation contains "FileUploaded"
+| summarize count() by UserId
+| distinct count_> 300
+| extend Data_Downloaded_Uploaded = Column6
+| project Data_Downloaded_Uploaded
+),
+(
+OfficeActivity
+| where UserId in ( z)
+| where Operation contains "FileDeleted" 
+| summarize count() by UserId
+| distinct count_> 100
+| extend Data_deleted = Column8
+| project Data_deleted
+),
+(FergusonMimecast_CL
+| where TimeGenerated >ago(6h)
+| where Recipient_s !contains "@ferguson.com" 
+| where Recipient_s  !contains "@wolseleyind.com"
+| where Recipient_s !contains "@wolseleyind.com"
+| where Recipient_s !contains "@build.com"
+| where Sender_s in (z)
+| summarize count() by Sender_s
+| distinct count_ > 1
+| extend Mail_forward_to_external_address=Column10
+| project Mail_forward_to_external_address
+ ),
+ (SigninLogs
+ //| where TImeGenerated < ago(24h)
+ | where ResultType <> 0
+ | where UserPrincipalName  in (z)
+ | where UserAgent in (x)
+ | where IPAddress !in (ipadd2) and IPAddress in (j)
+ | summarize count() by UserPrincipalName
+ | extend No_of_failure_events= count_
+ | project No_of_failure_events
+ ),
+(SigninLogs
+ | where TimeGenerated < ago(24h)
+ | where ResultType == 0
+ | where UserPrincipalName  in (z)
+ | where UserAgent in (x)
+ | where IPAddress !in (ipadd2) and IPAddress in (j)
+ //| summarize count() by UserPrincipalName
+ | extend sucessfull_login= "yes"
+ | project sucessfull_login
+ ),
+ (SecurityAlert
+ | where TimeGenerated > ago(24h)
+| search "zac.hansen@ferguson.com"
+| where AlertName <> "Unfamiliar sign-in properties"
+| summarize count() by AlertName)
