@@ -1,0 +1,11 @@
+urlscan.io integration\
+
+API KEY : 7f3a08e0-754e-4af7-8eb3-0a6393fd00e7
+
+import requests
+import json
+headers = {'API-Key':'$apikey','Content-Type':'application/json'}
+data = {"url": "https://urlyouwanttoscan.com/path/", "visibility": "public"}
+response = requests.post('https://urlscan.io/api/v1/scan/',headers=headers, data=json.dumps(data))
+print(response)
+print(response.json())
