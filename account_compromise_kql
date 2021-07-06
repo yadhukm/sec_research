@@ -30,13 +30,13 @@ let y = datatable (location: string )
 
 let z= datatable (upn: string)
 
-["zac.hansen@ferguson.com"];
+[""];
 
 
 
 let j= datatable (IPAddress : string)
 
-["129.56.35.211"];
+[""];
 
 
 
@@ -187,6 +187,6 @@ OfficeActivity
  ),
  (SecurityAlert
  | where TimeGenerated > ago(24h)
-| search "zac.hansen@ferguson.com"
+| search ""
 | where AlertName <> "Unfamiliar sign-in properties"
 | summarize count() by AlertName)
