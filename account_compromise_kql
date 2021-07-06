@@ -16,177 +16,266 @@ account compromise
 
 
 
-let x= datatable (user_agent: string )
-
-["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36 Edg/90.0.818.62"];
-
-
-
-let y = datatable (location: string )
-
-["NG"];
+let User_Agent= datatable (user_agent: string )
+["user agent"];
 
 
 
-let z= datatable (upn: string)
-
-[""];
-
+let UserName_UPN= datatable (upn: string)
+["username@domain"];
 
 
-let j= datatable (IPAddress : string)
-
-[""];
-
+let IP_Address= datatable (IPAddress : string)
+["1.1.1.1"];
 
 
 let ipadd= "^198.90";
-
 let ipadd2=(SigninLogs
-
 | where IPAddress matches regex ipadd
-
 | project IPAddress);
 
 
+let user_device= (IntuneDeviceComplianceOrg
+| where UPN in (UserName_UPN)
+| distinct DeviceName);
+
+
+let domain_user_name = datatable ( user: string )
+["23j3k4"];
+
+
+let substring1= "DS";
+
+
+let Location1 = (SigninLogs| where IPAddress in (IP_Address) and  IPAddress !in (ipadd2)
+         | distinct Location);
+
+
+
+///Checks if the user agent is previously seen for the user
+
 
 union isfuzzy=true (SigninLogs
-
-| where UserPrincipalName in (z)
-
-| where TimeGenerated <= ago(12h)
-
+| where UserPrincipalName in (UserName_UPN)
+| where TimeGenerated <= ago(24h)
 | where TimeGenerated >= ago(14d)
-
 | where ResultType == 0
-
-| where UserAgent in (x)
-
-| distinct UserAgent in (x)
-
+| where UserAgent in (User_Agent)
+| distinct UserAgent in (User_Agent)
 | extend Previously_observed_UserAgent = Column1
+| project Previously_observed_UserAgent),
 
-| project Previously_observed_UserAgent
 
-),
+
+///cheks if the IP location is previously seen
+
 
 (SigninLogs
-
-| where UserPrincipalName in (z)
-
-| where TimeGenerated <= ago(12h)
-
+| where UserPrincipalName in (UserName_UPN)
+| where TimeGenerated <= ago(24h)
 | where TimeGenerated >= ago(14d)
-
 | where ResultType == 0
-
-| where Location in (y)
-
-| distinct Location in (y)
-
+| where Location in (Location1)
+| distinct Location in (Location1)
 | extend Previously_Observed_Location = Column2
+| project Previously_Observed_Location),
 
-| project Previously_Observed_Location
 
-),
 
-(
+///check if the ip is previously seen for the user
 
-SigninLogs
 
-| where IPAddress !in (ipadd2) and IPAddress in (j)
-
-| where TimeGenerated <= ago(12h)
-
+(SigninLogs
+| where IPAddress !in (ipadd2) and IPAddress in (IP_Address)
+| where TimeGenerated <= ago(24h)
 | where TimeGenerated >= ago(14d)
-
 | where ResultType == 0
-
-| where UserPrincipalName  in (z)
-
-| distinct UserPrincipalName in (z)
-
+| where UserPrincipalName  in (UserName_UPN)
+| distinct UserPrincipalName in (UserName_UPN)
 | extend Previously_Observed_IP = Column3
-
-| project Previously_Observed_IP
-
-),
+| project Previously_Observed_IP),
 
 
-    
 
-(
+///checks if any new inbox rules are written by the user    
 
-OfficeActivity
 
+(OfficeActivity
+| where TimeGenerated >= ago(24h)
 | where Operation contains "Set-Mailbox" or Operation contains "New-InboxRule"
-
-| where TimeGenerated <= ago(12h)
-
-| where TimeGenerated >= ago(14d)
-
-| where UserId in (z)
-
-| distinct UserId in (z)
-
+| where UserId in (UserName_UPN)
+| distinct UserId in (UserName_UPN)
 | extend New_Rule_Written = Column4
+| project New_Rule_Written),
 
-| project New_Rule_Written
 
-),
 
-(
-OfficeActivity
-| where UserId in ( z)
+//checks if any unusual file upload /download operation are performed by the user
+
+
+
+(OfficeActivity
+| where TimeGenerated >= ago(48h)
+| where UserId in (UserName_UPN)
 | where Operation contains "FileDownloaded" or Operation contains "FileUploaded"
 | summarize count() by UserId
 | distinct count_> 300
 | extend Data_Downloaded_Uploaded = Column6
-| project Data_Downloaded_Uploaded
-),
-(
-OfficeActivity
-| where UserId in ( z)
+| project Data_Downloaded_Uploaded),
+
+
+
+//checks if any unusual mass delete operation observed from the user
+
+
+(OfficeActivity
+| where TimeGenerated >= ago(48h)
+| where UserId in (UserName_UPN)
 | where Operation contains "FileDeleted" 
 | summarize count() by UserId
 | distinct count_> 100
 | extend Data_deleted = Column8
 | project Data_deleted
 ),
+
+
+
+//check if any external mails are send by the user
+
+
 (FergusonMimecast_CL
-| where TimeGenerated >ago(6h)
+| where TimeGenerated >ago(24h)
 | where Recipient_s !contains "@ferguson.com" 
 | where Recipient_s  !contains "@wolseleyind.com"
 | where Recipient_s !contains "@wolseleyind.com"
 | where Recipient_s !contains "@build.com"
-| where Sender_s in (z)
+| where Sender_s in (UserName_UPN)
 | summarize count() by Sender_s
 | distinct count_ > 1
 | extend Mail_forward_to_external_address=Column10
 | project Mail_forward_to_external_address
  ),
+
+
+ 
+ //The number of failure event observed from the ip for the user
+
+
  (SigninLogs
- //| where TImeGenerated < ago(24h)
+ | where TImeGenerated >= ago(24h)
  | where ResultType <> 0
- | where UserPrincipalName  in (z)
- | where UserAgent in (x)
- | where IPAddress !in (ipadd2) and IPAddress in (j)
+ | where UserPrincipalName  in (UserName_UPN)
+ | where UserAgent in (User_Agent)
+ | where IPAddress !in (ipadd2) and IPAddress in (IP_Address)
  | summarize count() by UserPrincipalName
  | extend No_of_failure_events= count_
  | project No_of_failure_events
  ),
+
+
+
+//checks if successfull login observed for the user from the ip
+
+
 (SigninLogs
- | where TimeGenerated < ago(24h)
+ | where TimeGenerated >= ago(24h)
  | where ResultType == 0
- | where UserPrincipalName  in (z)
- | where UserAgent in (x)
- | where IPAddress !in (ipadd2) and IPAddress in (j)
- //| summarize count() by UserPrincipalName
- | extend sucessfull_login= "yes"
- | project sucessfull_login
+ | where UserPrincipalName  in (UserName_UPN)
+ | where UserAgent in (User_Agent)
+ | where IPAddress !in (ipadd2) and IPAddress in (IP_Address)
+ | summarize count() by UserPrincipalName
+ | distinct count_>=1
+ | extend success_found = Column12
+ | project success_found
  ),
- (SecurityAlert
- | where TimeGenerated > ago(24h)
-| search ""
+
+
+
+
+//Number of alerts recieved for the user during the period
+
+
+(SecurityAlert
+| where TimeGenerated > ago(24h)
+| search "username"
 | where AlertName <> "Unfamiliar sign-in properties"
-| summarize count() by AlertName)
+| project AlertName),
+
+
+
+//checks if any malware related events are seen in the users machine
+
+
+(
+FergusonCybereasonMalware_CL
+| where TimeGenerated >= ago(24h)
+| union  FergusonCybereasonMalops_CL 
+| extend Machine = tostring(parse_json(elementValues_affectedMachines_elementValues_s)[0].name)
+| where machineName_s in (user_device) or Machine in (user_device)
+| extend mcn = strcat(machineName_s,Machine)
+| summarize count() by mcn
+| distinct count_>= 1
+| extend CR_detection_in_the_machine= Column14
+| project CR_detection_in_the_machine),
+
+
+//checks if any password reset for the user observed
+
+
+
+(AuditLogs
+| where TimeGenerated >= ago(24h)
+| where OperationName == "Reset user password"
+| extend userPrincipalName_ = tostring(TargetResources[0].userPrincipalName)
+| where userPrincipalName_ in (UserName_UPN)
+| summarize count() by userPrincipalName_
+| distinct count_>= 1
+| extend Reset_user_password_done = Column16
+| project Reset_user_password_done),
+
+
+//Checks if user have added/removed from any group
+
+
+
+(AuditLogs
+| where TimeGenerated >= ago(24h)
+| where OperationName == "Remove member from group" or OperationName == "Add member to group"
+| extend Device_name = tostring(TargetResources[0].displayName)
+| where Device_name in (user_device)
+| summarize count() by Device_name
+| distinct count_>=1
+| extend Remove_or_add_member_to_group_done= Column18
+| project Remove_or_add_member_to_group_done
+),
+
+
+//lateral movement attempts via explicit credentials, from one account to another.
+(
+SecurityEvent
+| where TimeGenerated > ago(46h)
+| extend substring2= trim(substring1,Account)
+| extend user1 = trim_start(@"[^\w]+", substring2)
+| where user1 in(domain_user_name)
+| extend SubjectUserName = tolower(SubjectUserName), TargetUserName = tolower(TargetUserName)
+| where EventID == 4648 and SubjectUserName !endswith '$' and TargetUserName !endswith '$' and SubjectUserName != TargetUserName 
+| where SubjectUserName != "-" and TargetUserName != '-' and isnotempty(SubjectUserName) and isnotempty(TargetUserName) 
+| summarize count() by SubjectUserName
+| distinct count_>= 1
+| extend possible_lateral_movement_attempts = Column20
+| project possible_lateral_movement_attempts
+),
+
+
+//excessive denied traffic from the user machine through proxy log
+
+
+(FergusonCiscoUmbrella_CL
+| where TimeGenerated >= ago(24h)
+| where identities_s in (user_device)
+| where action_s == "Blocked"
+| summarize count() by action_s
+| distinct count_> 500
+|extend abnormal_deny_traffic_observed_from_the_user_machine= Column22
+| project abnormal_deny_traffic_observed_from_the_user_machine
+)
